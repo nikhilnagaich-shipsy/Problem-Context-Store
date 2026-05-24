@@ -12,8 +12,9 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-import { prisma, ManualChannel } from '@pcs/db';
+import { prisma, ManualChannel, MembershipRole } from '@pcs/db';
 import { getSession } from '@/lib/auth';
+import { requireMinRole } from '@/lib/rbac';
 
 const CreateManualNoteSchema = z.object({
   problemId: z.string().optional(),
@@ -33,6 +34,7 @@ export async function createManualNote(
   formData: FormData,
 ): Promise<CreateNoteState> {
   const session = await getSession();
+  requireMinRole(session, MembershipRole.MEMBER);
 
   const parsed = CreateManualNoteSchema.safeParse({
     problemId: formData.get('problemId') || undefined,
@@ -105,6 +107,7 @@ const DeleteNoteSchema = z.object({ noteId: z.string().min(1) });
 
 export async function deleteManualNote(formData: FormData) {
   const session = await getSession();
+  requireMinRole(session, MembershipRole.MEMBER);
   const parsed = DeleteNoteSchema.parse({ noteId: formData.get('noteId') });
 
   const note = await prisma.manualNote.findFirst({

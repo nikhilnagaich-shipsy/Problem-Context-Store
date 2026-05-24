@@ -1,19 +1,24 @@
 /**
- * Dev-mode session resolver.
+ * Session resolver — now backed by Auth.js v5.
  *
- * NOTE: This is intentionally a placeholder for M2. It reads a cookie that
- * stores the active userId; if the cookie is missing, it auto-selects the
- * first seeded user so the app is immediately walkable.
+ * The return shape (`{ user, workspace, membership }`) is intentionally
+ * preserved from the M2-lite dev-cookie version so the rest of the app
+ * doesn't change.
  *
- * In M2 this gets replaced by Auth.js v5 with magic links + Google OAuth.
- * The contract returned by `getSession()` will stay stable.
+ *   Behavior:
+ *     - If no Auth.js session → redirect to /signin.
+ *     - If signed in but no memberships → redirect to /workspaces/new.
+ *     - If signed in with memberships:
+ *         - Active workspace = cookie `pcs_active_workspace` if it points at
+ *           a workspace the user belongs to, otherwise first membership.
  */
 
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { prisma, type User, type Workspace, type Membership } from '@pcs/db';
+import { auth } from '@/auth';
 
-const COOKIE_USER = 'pcs_dev_user';
-const COOKIE_WORKSPACE = 'pcs_dev_workspace';
+const COOKIE_WORKSPACE = 'pcs_active_workspace';
 
 export type Session = {
   user: User;
@@ -22,71 +27,62 @@ export type Session = {
 };
 
 /**
- * Returns the current session — user + active workspace + their membership.
- * Throws if no users exist (the seed should always create one).
+ * Returns the current session. Throws via Next.js `redirect()` if the user
+ * is not signed in or has no workspace yet.
  */
 export async function getSession(): Promise<Session> {
-  const jar = cookies();
-  const cookieUserId = jar.get(COOKIE_USER)?.value;
-  const cookieWorkspaceId = jar.get(COOKIE_WORKSPACE)?.value;
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect('/signin');
+  }
 
-  // Resolve the user — cookie first, fallback to the earliest-created user.
-  const user = cookieUserId
-    ? await prisma.user.findUnique({ where: { id: cookieUserId } })
-    : await prisma.user.findFirst({ orderBy: { createdAt: 'asc' } });
-
+  const user = await prisma.user.findUnique({ where: { id: session.user.id } });
   if (!user) {
-    throw new Error(
-      'No users found. Run `pnpm db:seed` to create the demo workspace.',
-    );
+    // Stale session — force re-sign-in.
+    redirect('/signin');
   }
 
-  // Resolve the workspace via membership — cookie first, then first membership.
-  const membership = cookieWorkspaceId
-    ? await prisma.membership.findUnique({
-        where: { userId_workspaceId: { userId: user.id, workspaceId: cookieWorkspaceId } },
-        include: { workspace: true },
-      })
-    : await prisma.membership.findFirst({
-        where: { userId: user.id },
-        orderBy: { createdAt: 'asc' },
-        include: { workspace: true },
-      });
+  const memberships = await prisma.membership.findMany({
+    where: { userId: user.id },
+    include: { workspace: true },
+    orderBy: { createdAt: 'asc' },
+  });
 
-  if (!membership) {
-    throw new Error(
-      `User ${user.email} has no workspace memberships. Run \`pnpm db:seed\`.`,
-    );
+  if (memberships.length === 0) {
+    redirect('/workspaces/new');
   }
+
+  const cookieWorkspaceId = cookies().get(COOKIE_WORKSPACE)?.value;
+  const active =
+    memberships.find((m) => m.workspaceId === cookieWorkspaceId) ?? memberships[0]!;
 
   return {
     user,
-    workspace: membership.workspace,
-    membership,
+    workspace: active.workspace,
+    membership: active,
   };
 }
 
 /**
- * Switch active workspace. Returns the new session.
- * Used by the workspace switcher in the sidebar.
+ * Same as getSession() but doesn't redirect when there's no workspace.
+ * Used by /workspaces/new to render its own UI.
+ */
+export async function getUserOrRedirect(): Promise<User> {
+  const session = await auth();
+  if (!session?.user?.id) redirect('/signin');
+  const user = await prisma.user.findUnique({ where: { id: session.user.id } });
+  if (!user) redirect('/signin');
+  return user;
+}
+
+/**
+ * Set the active workspace cookie. Called by the workspace switcher.
  */
 export async function setActiveWorkspace(workspaceId: string) {
   cookies().set(COOKIE_WORKSPACE, workspaceId, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
-    maxAge: 60 * 60 * 24 * 30,
-  });
-}
-
-/**
- * Switch active user (dev only — handy to test multi-user scenarios).
- */
-export async function setActiveUser(userId: string) {
-  cookies().set(COOKIE_USER, userId, {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: 60 * 60 * 24 * 365,
   });
 }

@@ -16,7 +16,7 @@ Built first for Shipsy. Architected from day one as a multi-tenant SaaS.
 | Web | Next.js 14 (App Router, RSC + Server Actions) |
 | DB | Postgres 16 + `pgvector` |
 | ORM | Prisma |
-| Auth | Dev-cookie session for now → Auth.js v5 in real M2 |
+| Auth | Auth.js v5 — magic links (Resend or console fallback) + optional Google OAuth |
 | Queue | BullMQ + Redis (added in M5) |
 | LLM | Anthropic Claude (added in M6) |
 | Styling | Tailwind CSS |
@@ -85,6 +85,9 @@ docker run -d \
 pnpm install
 cp .env.example .env
 
+# Generate AUTH_SECRET and paste it into .env
+openssl rand -base64 32
+
 pnpm db:generate     # generate Prisma client
 pnpm db:push         # push schema to Postgres
 pnpm db:seed         # load Shipsy + Acme + Globex demo state
@@ -96,7 +99,25 @@ pnpm db:seed         # load Shipsy + Acme + Globex demo state
 pnpm dev             # → http://localhost:3000
 ```
 
-You'll be auto-signed-in as the seeded user (Nikhil Nagaich · `nikhil.nagaich@shipsy.io`) into the Shipsy workspace. Real auth comes in M2.
+### 5. Sign in
+
+You'll land on `/signin`. Type your email (use `nikhil.nagaich@shipsy.io` to sign into the seeded Shipsy workspace) and hit "Email me a sign-in link."
+
+- **If `RESEND_API_KEY` is set:** the magic link arrives by email.
+- **If not (default for dev):** the magic link is printed to your `pnpm dev` terminal. Copy/paste it into your browser to sign in.
+
+If you sign in as a new email that isn't in the seed, you'll be sent to `/workspaces/new` to create your first workspace.
+
+#### Optional: enable Google OAuth
+
+Add to `.env`:
+```
+AUTH_GOOGLE_ID="..."
+AUTH_GOOGLE_SECRET="..."
+```
+Create these credentials at [Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs](https://console.cloud.google.com/apis/credentials), with `http://localhost:3000/api/auth/callback/google` as an authorized redirect URI.
+
+The "Continue with Google" button only appears when both vars are set.
 
 ---
 
@@ -133,11 +154,11 @@ The fastest way to walk the whole product:
 See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full breakdown.
 
 - [x] **M1** — Foundation scaffolding
-- [x] **M2-lite** — Dev-session auth (cookie-based). Real Auth.js in M2.
-- [x] **M3** — Data model (Prisma schema, 13 models)
+- [x] **M2** — Auth & multi-tenancy (Auth.js v5, magic links + optional Google, invites, RBAC)
+- [x] **M3** — Data model (Prisma schema, 16 models including Auth.js adapter tables)
 - [x] **M4** — Problem timeline UI + manual capture
-- [ ] **M5** — Ingestion framework (webhooks, queue, normalizer)
-- [ ] **M6** — Resolution layer (rules + vector + LLM judge)
+- [x] **M5** — Ingestion framework (adapter interface, webhook receiver, Stub connector, inbox triage)
+- [ ] **M6** — Resolution layer (rules + vector + LLM judge — replaces the M5 stub)
 - [ ] **M7** — Intelligence layer (embeddings, summary regen, Q&A)
 - [ ] **M8** — Connectors (Slack, DevRev, GitHub, Gmail)
 - [ ] **M9** — Surfaces (Slack bot, email-in, browser ext)

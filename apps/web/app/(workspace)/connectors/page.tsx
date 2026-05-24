@@ -1,51 +1,66 @@
-import { prisma } from '@pcs/db';
+import Link from 'next/link';
+import { Plus, ChevronRight } from 'lucide-react';
+import { prisma, ConnectorStatus } from '@pcs/db';
+import { listAdapters } from '@pcs/connectors';
 import { getSession } from '@/lib/auth';
 import { Topbar } from '@/components/Topbar';
 import { Badge } from '@/components/ui/Badge';
 import { SourceIcon, sourceLabel } from '@/components/SourceIcon';
+import { relativeTime } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
+const STATUS_TONES: Record<ConnectorStatus, 'success' | 'muted' | 'warn' | 'danger'> = {
+  ACTIVE: 'success',
+  PENDING: 'warn',
+  ERROR: 'danger',
+  PAUSED: 'muted',
+  DISCONNECTED: 'muted',
+};
+
 export default async function ConnectorsPage() {
   const session = await getSession();
-  const connectors = await prisma.connectorInstance.findMany({
-    where: { workspaceId: session.workspace.id },
-    orderBy: { kind: 'asc' },
-  });
-
-  const installable: Array<{ kind: 'SLACK' | 'DEVREV' | 'GITHUB' | 'GMAIL'; status: string }> = [
-    { kind: 'SLACK', status: 'Coming in M8' },
-    { kind: 'DEVREV', status: 'Coming in M8' },
-    { kind: 'GITHUB', status: 'Coming in M8' },
-    { kind: 'GMAIL', status: 'Coming in M8' },
-  ];
+  const [instances, adapters] = await Promise.all([
+    prisma.connectorInstance.findMany({
+      where: { workspaceId: session.workspace.id },
+      orderBy: { createdAt: 'desc' },
+    }),
+    Promise.resolve(listAdapters()),
+  ]);
 
   return (
     <>
       <Topbar
         title="Connectors"
-        subtitle="Bring source-of-truth tools into the Problem Context Store"
+        subtitle={`${instances.length} installed`}
+        primaryAction={{ label: 'Install', href: '/connectors/new' }}
       />
       <main className="px-6 py-6">
         <section className="mb-8">
           <h2 className="mb-3 text-sm font-semibold text-ink-900">Installed</h2>
-          {connectors.length === 0 ? (
-            <p className="text-sm text-ink-500">None installed yet.</p>
+          {instances.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-ink-200 bg-white p-12 text-center text-sm text-ink-500">
+              No connectors yet. <Link href="/connectors/new" className="text-accent hover:underline">Install one</Link> to start ingesting events.
+            </div>
           ) : (
             <ul className="grid gap-3 sm:grid-cols-2">
-              {connectors.map((c) => (
-                <li
-                  key={c.id}
-                  className="flex items-center gap-3 rounded-lg border border-ink-200 bg-white p-4 shadow-sm"
-                >
-                  <SourceIcon source={c.kind} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink-900">{c.displayName}</p>
-                    <p className="truncate text-xs text-ink-500">{sourceLabel(c.kind)}</p>
-                  </div>
-                  <Badge tone={c.status === 'ACTIVE' ? 'success' : 'muted'}>
-                    {c.status.toLowerCase()}
-                  </Badge>
+              {instances.map((c) => (
+                <li key={c.id}>
+                  <Link
+                    href={`/connectors/${c.id}`}
+                    className="group flex items-center gap-3 rounded-lg border border-ink-200 bg-white p-4 shadow-sm hover:border-ink-300"
+                  >
+                    <SourceIcon source={c.kind} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-ink-900">{c.displayName}</p>
+                      <p className="truncate text-xs text-ink-500">
+                        {sourceLabel(c.kind)}
+                        {c.lastSyncAt && <> · synced {relativeTime(c.lastSyncAt)}</>}
+                      </p>
+                    </div>
+                    <Badge tone={STATUS_TONES[c.status]}>{c.status.toLowerCase()}</Badge>
+                    <ChevronRight size={16} className="text-ink-300 group-hover:text-ink-500" />
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -53,17 +68,37 @@ export default async function ConnectorsPage() {
         </section>
 
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-ink-900">Available</h2>
+          <h2 className="mb-3 text-sm font-semibold text-ink-900">Available to install</h2>
           <ul className="grid gap-3 sm:grid-cols-2">
-            {installable.map((i) => (
+            {adapters.map((a) => (
               <li
-                key={i.kind}
-                className="flex items-center gap-3 rounded-lg border border-dashed border-ink-200 bg-white/50 p-4"
+                key={a.descriptor.kind}
+                className="flex items-center gap-3 rounded-lg border border-ink-200 bg-white p-4 shadow-sm"
               >
-                <SourceIcon source={i.kind} />
+                <SourceIcon source={a.descriptor.kind} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-ink-900">{sourceLabel(i.kind)}</p>
-                  <p className="truncate text-xs text-ink-500">{i.status}</p>
+                  <p className="truncate text-sm font-medium text-ink-900">{a.descriptor.displayName}</p>
+                  <p className="truncate text-xs text-ink-500">{a.descriptor.description}</p>
+                </div>
+                <Link
+                  href={`/connectors/new?slug=${slugFromKind(a.descriptor.kind)}`}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md bg-ink-900 px-2.5 text-xs font-medium text-white hover:bg-ink-700"
+                >
+                  <Plus size={12} />
+                  Install
+                </Link>
+              </li>
+            ))}
+            {/* Placeholders for upcoming connectors */}
+            {(['SLACK', 'DEVREV', 'GITHUB', 'GMAIL'] as const).map((kind) => (
+              <li
+                key={kind}
+                className="flex items-center gap-3 rounded-lg border border-dashed border-ink-200 bg-white/40 p-4"
+              >
+                <SourceIcon source={kind} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-ink-900">{sourceLabel(kind)}</p>
+                  <p className="truncate text-xs text-ink-500">Coming in M8</p>
                 </div>
                 <button
                   disabled
@@ -78,4 +113,8 @@ export default async function ConnectorsPage() {
       </main>
     </>
   );
+}
+
+function slugFromKind(kind: string): string {
+  return kind.toLowerCase();
 }

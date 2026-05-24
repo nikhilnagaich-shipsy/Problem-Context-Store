@@ -7,7 +7,8 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
   const session = await getSession();
   return (
     <div className="min-h-screen bg-ink-50">
-      <Sidebar workspace={session.workspace} user={session.user} />
+      {/* @ts-expect-error Async Server Component */}
+      <Sidebar workspace={session.workspace} user={session.user} membership={session.membership} />
       <div className="md:pl-60">{children}</div>
     </div>
   );

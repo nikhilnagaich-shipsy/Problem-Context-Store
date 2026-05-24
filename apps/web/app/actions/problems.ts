@@ -14,8 +14,9 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-import { prisma, ProblemStatus, Severity } from '@pcs/db';
+import { prisma, ProblemStatus, Severity, MembershipRole } from '@pcs/db';
 import { getSession } from '@/lib/auth';
+import { requireMinRole } from '@/lib/rbac';
 
 // ---------------------------------------------------------------------------
 // createProblem
@@ -37,6 +38,7 @@ export async function createProblem(
   formData: FormData,
 ): Promise<CreateProblemState> {
   const session = await getSession();
+  requireMinRole(session, MembershipRole.MEMBER);
 
   const parsed = CreateProblemSchema.safeParse({
     clientId: formData.get('clientId'),
@@ -101,6 +103,7 @@ const UpdateStatusSchema = z.object({
 
 export async function updateProblemStatus(formData: FormData) {
   const session = await getSession();
+  requireMinRole(session, MembershipRole.MEMBER);
   const parsed = UpdateStatusSchema.parse({
     problemId: formData.get('problemId'),
     status: formData.get('status'),
@@ -151,6 +154,7 @@ const UpdateSeveritySchema = z.object({
 
 export async function updateProblemSeverity(formData: FormData) {
   const session = await getSession();
+  requireMinRole(session, MembershipRole.MEMBER);
   const parsed = UpdateSeveritySchema.parse({
     problemId: formData.get('problemId'),
     severity: formData.get('severity'),
