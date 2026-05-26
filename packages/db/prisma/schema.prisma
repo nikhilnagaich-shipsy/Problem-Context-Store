@@ -215,7 +215,7 @@ model Problem {
 
   // Embedding of (title + description + summaries) for clustering & similarity
   // Cast as Unsupported because Prisma doesn't natively type vector(N) yet.
-  embedding Unsupported("vector(1536)")?
+  embedding Unsupported("vector(768)")?
 
   // Soft-tagging — kept as a JSON array of strings for v1 velocity. Move to
   // a join table when we add the tag-management UI.
@@ -325,7 +325,7 @@ model Event {
   resolutionMethod            ResolutionMethod?
 
   // Embedding for clustering & semantic search
-  embedding Unsupported("vector(1536)")?
+  embedding Unsupported("vector(768)")?
 
   createdAt DateTime @default(now())
 

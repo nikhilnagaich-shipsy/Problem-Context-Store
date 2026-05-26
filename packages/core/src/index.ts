@@ -6,6 +6,6 @@
  * but it must never depend on Next.js, Auth.js, or any web-only library.
  */
 
-export * from './types.js';
-export * from './errors.js';
-export * from './constants.js';
+export * from './types';
+export * from './errors';
+export * from './constants';

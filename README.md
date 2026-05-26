@@ -158,11 +158,59 @@ See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full breakdown.
 - [x] **M3** — Data model (Prisma schema, 16 models including Auth.js adapter tables)
 - [x] **M4** — Problem timeline UI + manual capture
 - [x] **M5** — Ingestion framework (adapter interface, webhook receiver, Stub connector, inbox triage)
-- [ ] **M6** — Resolution layer (rules + vector + LLM judge — replaces the M5 stub)
+- [x] **M6** — Resolution layer (rules + vector + LLM judge, pluggable providers — free Ollama by default)
 - [ ] **M7** — Intelligence layer (embeddings, summary regen, Q&A)
 - [ ] **M8** — Connectors (Slack, DevRev, GitHub, Gmail)
 - [ ] **M9** — Surfaces (Slack bot, email-in, browser ext)
 - [ ] **M10** — Admin, billing, audit UI, observability
+
+---
+
+## Intelligence: free local with Ollama (recommended)
+
+The resolver uses two AI capabilities — text embeddings (for semantic similarity matching) and an LLM "judge" (for ambiguous cases). Both have free local implementations via [Ollama](https://ollama.com).
+
+### One-time Ollama setup
+
+```bash
+# Install (Mac)
+brew install ollama
+ollama serve &   # start the background service
+
+# Pull the two models we need (~5.5GB total disk)
+ollama pull nomic-embed-text   # embeddings — 137MB, 8192-token context, 768 dims
+ollama pull llama3.1:8b        # LLM judge — ~5GB, runs JSON mode reliably
+```
+
+### Wire it into the app
+
+Add to `.env`:
+
+```
+OLLAMA_BASE_URL="http://localhost:11434"
+OLLAMA_EMBEDDING_MODEL="nomic-embed-text"
+OLLAMA_LLM_MODEL="llama3.1:8b"
+```
+
+Refresh the subdir copies and restart:
+
+```bash
+cp .env packages/db/.env
+cp .env apps/web/.env
+pnpm dev
+```
+
+### Backfill existing embeddings
+
+Once Ollama is wired, go to **Settings → Intelligence → Backfill embeddings.** This embeds your seeded Problems and any pre-Ollama events so vector search has data to compare against. Subsequent ingests embed automatically.
+
+### Want paid quality instead?
+
+The same pipeline supports OpenAI for embeddings and Anthropic for the judge. Set `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in `.env`. If both Ollama and a paid provider are configured, the explicit `EMBEDDINGS_PROVIDER` / `LLM_PROVIDER` env vars decide.
+
+### Want neither?
+
+The resolver still runs — rules-only. Ambiguous events land in `/inbox` for manual triage. That's the M5 behavior.
 
 ---
 

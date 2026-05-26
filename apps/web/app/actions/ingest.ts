@@ -43,6 +43,24 @@ export async function installConnector(formData: FormData) {
     throw new Error(`Connector ${parsed.slug} requires OAuth — coming in M8.`);
   }
 
+  // Friendly collision check (the DB has a unique constraint on
+  // (workspaceId, kind, displayName), but we want a readable message rather
+  // than a P2002 stacktrace).
+  const existing = await prisma.connectorInstance.findFirst({
+    where: {
+      workspaceId: session.workspace.id,
+      kind: adapter.descriptor.kind,
+      displayName: parsed.displayName,
+    },
+    select: { id: true },
+  });
+  if (existing) {
+    throw new Error(
+      `You already have a ${adapter.descriptor.displayName} connector named "${parsed.displayName}". ` +
+        `Pick a different name to install another.`,
+    );
+  }
+
   const token = generateWebhookToken();
 
   const instance = await prisma.connectorInstance.create({

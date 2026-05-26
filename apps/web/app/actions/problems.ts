@@ -17,6 +17,8 @@ import { z } from 'zod';
 import { prisma, ProblemStatus, Severity, MembershipRole } from '@pcs/db';
 import { getSession } from '@/lib/auth';
 import { requireMinRole } from '@/lib/rbac';
+import { embedText, embeddingsAvailable } from '@/lib/intelligence/embeddings';
+import { persistProblemEmbedding } from '@/lib/resolution/vector';
 
 // ---------------------------------------------------------------------------
 // createProblem
@@ -75,6 +77,20 @@ export async function createProblem(
       createdById: session.user.id,
     },
   });
+
+  // Best-effort embedding so the resolver can vector-match future events against
+  // this Problem immediately — no manual Backfill required. Non-fatal: if the
+  // embedding provider is down, the Problem still gets created and can be
+  // backfilled later from /settings.
+  if (embeddingsAvailable()) {
+    try {
+      const text = `${problem.title}\n\n${problem.description ?? ''}`;
+      const vec = await embedText(text);
+      if (vec) await persistProblemEmbedding(problem.id, vec);
+    } catch (err) {
+      console.error('createProblem: embedding failed (non-fatal):', err);
+    }
+  }
 
   await prisma.auditLog.create({
     data: {

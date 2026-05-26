@@ -1,23 +1,44 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { listAdapters } from '@pcs/connectors';
+import { prisma } from '@pcs/db';
+import { getSession } from '@/lib/auth';
 import { Topbar } from '@/components/Topbar';
 import { installConnector } from '@/app/actions/ingest';
-import { Label, Input } from '@/components/ui/FormField';
+import { Label, Input, FieldHint } from '@/components/ui/FormField';
 import { Button } from '@/components/ui/Button';
 import { SourceIcon } from '@/components/SourceIcon';
 
 export const dynamic = 'force-dynamic';
 
-export default function NewConnectorPage({
+export default async function NewConnectorPage({
   searchParams,
 }: {
   searchParams: { slug?: string };
 }) {
+  const session = await getSession();
   const adapters = listAdapters();
   const chosen = searchParams.slug
     ? adapters.find((a) => a.descriptor.kind.toLowerCase() === searchParams.slug)
     : null;
+
+  // Suggest a default displayName that won't collide with an existing instance.
+  let defaultName = chosen?.descriptor.displayName ?? '';
+  if (chosen) {
+    const existingNames = new Set(
+      (
+        await prisma.connectorInstance.findMany({
+          where: { workspaceId: session.workspace.id, kind: chosen.descriptor.kind },
+          select: { displayName: true },
+        })
+      ).map((c) => c.displayName),
+    );
+    if (existingNames.has(defaultName)) {
+      let n = 2;
+      while (existingNames.has(`${chosen.descriptor.displayName} #${n}`)) n++;
+      defaultName = `${chosen.descriptor.displayName} #${n}`;
+    }
+  }
 
   return (
     <>
@@ -68,9 +89,10 @@ export default function NewConnectorPage({
                   id="displayName"
                   name="displayName"
                   required
-                  placeholder={`e.g. ${chosen.descriptor.displayName} for internal testing`}
-                  defaultValue={chosen.descriptor.displayName}
+                  placeholder="A short, recognizable label for this install"
+                  defaultValue={defaultName}
                 />
+                <FieldHint>Must be unique per connector type in this workspace.</FieldHint>
               </div>
               <div className="rounded-md bg-ink-50 p-3 text-xs text-ink-700">
                 {chosen.descriptor.capabilities.authFlow === 'none' ? (

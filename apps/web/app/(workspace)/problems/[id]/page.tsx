@@ -9,6 +9,7 @@ import { SourceIcon, sourceLabel } from '@/components/SourceIcon';
 import { Topbar } from '@/components/Topbar';
 import { ProblemQuickLogButton } from '@/components/ProblemQuickLogButton';
 import { relativeTime } from '@/lib/format';
+import { RefreshSummaryButton } from './RefreshSummaryButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,22 +61,68 @@ export default async function ProblemDetailPage({ params }: { params: { id: stri
             </section>
           )}
 
-          <section className="grid gap-4 sm:grid-cols-3">
-            <SummaryCard
-              label="Approach"
-              body={problem.approachSummary}
-              emptyHint="What's the team trying?"
-            />
-            <SummaryCard
-              label="Root cause"
-              body={problem.rootCauseSummary}
-              emptyHint="Filled in when we know."
-            />
-            <SummaryCard
-              label="Resolution"
-              body={problem.resolutionSummary}
-              emptyHint="Filled in on resolve."
-            />
+          <section>
+            <header className="mb-3 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-ink-900">AI summaries</h2>
+                <p className="text-xs text-ink-500">
+                  {(() => {
+                    const summaryState = computeSummaryState({
+                      summaryGeneratedAt: problem.summaryGeneratedAt,
+                      lastEventAt: problem.events[problem.events.length - 1]?.timestamp ?? null,
+                      lastNoteAt:
+                        problem.manualNotes[problem.manualNotes.length - 1]?.occurredAt ?? null,
+                    });
+                    if (!summaryState.hasSummary)
+                      return 'Generate a summary from this Problem\'s events and notes.';
+                    if (summaryState.isStale)
+                      return `Stale — last generated ${relativeTime(
+                        problem.summaryGeneratedAt!,
+                      )}, but new evidence has arrived since.`;
+                    return `Last generated ${relativeTime(problem.summaryGeneratedAt!)}.`;
+                  })()}
+                </p>
+              </div>
+              <RefreshSummaryButton
+                problemId={problem.id}
+                hasSummary={
+                  !!(
+                    problem.rootCauseSummary ||
+                    problem.approachSummary ||
+                    problem.resolutionSummary
+                  )
+                }
+                isStale={
+                  computeSummaryState({
+                    summaryGeneratedAt: problem.summaryGeneratedAt,
+                    lastEventAt: problem.events[problem.events.length - 1]?.timestamp ?? null,
+                    lastNoteAt:
+                      problem.manualNotes[problem.manualNotes.length - 1]?.occurredAt ?? null,
+                  }).isStale
+                }
+              />
+            </header>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <SummaryCard
+                label="Approach"
+                body={problem.approachSummary}
+                emptyHint="What's the team trying?"
+              />
+              <SummaryCard
+                label="Root cause"
+                body={problem.rootCauseSummary}
+                emptyHint="Filled in when we know."
+              />
+              <SummaryCard
+                label="Resolution"
+                body={problem.resolutionSummary}
+                emptyHint={
+                  problem.status === 'RESOLVED'
+                    ? 'Regenerate to populate now that this is resolved.'
+                    : 'Filled in on resolve.'
+                }
+              />
+            </div>
           </section>
 
           <section>
@@ -228,4 +275,24 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <dd className="text-ink-700">{children}</dd>
     </div>
   );
+}
+
+/**
+ * A summary is "stale" when there's evidence newer than the last generation.
+ * Returns { hasSummary, isStale }.
+ */
+function computeSummaryState(input: {
+  summaryGeneratedAt: Date | null;
+  lastEventAt: Date | null;
+  lastNoteAt: Date | null;
+}): { hasSummary: boolean; isStale: boolean } {
+  const hasSummary = !!input.summaryGeneratedAt;
+  if (!hasSummary) return { hasSummary: false, isStale: false };
+
+  const generatedAt = input.summaryGeneratedAt!.getTime();
+  const lastEvidence = Math.max(
+    input.lastEventAt ? input.lastEventAt.getTime() : 0,
+    input.lastNoteAt ? input.lastNoteAt.getTime() : 0,
+  );
+  return { hasSummary: true, isStale: lastEvidence > generatedAt };
 }

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { LayoutDashboard, Users, Plug, Settings, Activity, StickyNote, Inbox } from 'lucide-react';
 import { prisma, type Workspace, type User, type Membership } from '@pcs/db';
+import { RESOLUTION_AUTO_THRESHOLD } from '@pcs/core';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { UserMenu } from './UserMenu';
 
@@ -13,17 +14,31 @@ export async function Sidebar({
   user: User;
   membership: Membership;
 }) {
-  // Load memberships + the inbox count so the sidebar can show a chip.
-  const [memberships, unattachedCount] = await Promise.all([
+  // Inbox count = unattached + auto-attached-but-low-confidence (needs confirm).
+  const [memberships, unattachedCount, lowConfCount] = await Promise.all([
     prisma.membership.findMany({
       where: { userId: user.id },
       include: { workspace: true },
       orderBy: { createdAt: 'asc' },
     }),
     prisma.event.count({
-      where: { workspaceId: workspace.id, problemId: null },
+      where: {
+        workspaceId: workspace.id,
+        problemId: null,
+        mentions: { none: { kind: 'HASHTAG', value: 'pcs:dismissed' } },
+      },
+    }),
+    prisma.event.count({
+      where: {
+        workspaceId: workspace.id,
+        problemId: { not: null },
+        problemResolutionConfidence: { lt: RESOLUTION_AUTO_THRESHOLD },
+        resolutionMethod: { notIn: ['MANUAL_CONFIRM'] },
+      },
     }),
   ]);
+
+  const inboxCount = unattachedCount + lowConfCount;
 
   const switcherOptions = memberships.map((m) => ({
     id: m.workspaceId,
@@ -49,7 +64,7 @@ export async function Sidebar({
           href="/inbox"
           icon={<Inbox size={15} />}
           label="Inbox"
-          badge={unattachedCount > 0 ? unattachedCount : undefined}
+          badge={inboxCount > 0 ? inboxCount : undefined}
         />
         <NavItem href="/clients" icon={<Users size={15} />} label="Clients" />
         <NavItem href="/notes" icon={<StickyNote size={15} />} label="Manual notes" />

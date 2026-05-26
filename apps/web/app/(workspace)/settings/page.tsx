@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { Users, ArrowRight } from 'lucide-react';
 import { getSession } from '@/lib/auth';
 import { Topbar } from '@/components/Topbar';
+import { BackfillEmbeddingsButton } from './BackfillEmbeddingsButton';
+import { IntelligenceStatus } from './IntelligenceStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +36,19 @@ export default async function SettingsPage() {
             Members
             <ArrowRight size={12} className="ml-0.5" />
           </Link>
+        </section>
+
+        <section className="mt-5 rounded-lg border border-ink-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-ink-900">Intelligence</h2>
+          <p className="mt-1 text-xs text-ink-500">
+            Provider status for the resolver, plus a one-shot embeddings backfill for existing
+            Problems and Events.
+          </p>
+          {/* @ts-expect-error Async Server Component */}
+          <IntelligenceStatus />
+          <div className="mt-4">
+            <BackfillEmbeddingsButton />
+          </div>
         </section>
 
         <section className="mt-5 rounded-lg border border-ink-200 bg-white p-5 shadow-sm">
